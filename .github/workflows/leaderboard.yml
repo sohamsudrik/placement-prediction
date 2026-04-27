@@ -1,0 +1,130 @@
+name: Update ML Leaderboard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+    paths:
+      - '**.ipynb'
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  update-leaderboard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: 'pr-branch'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install jupyter nbconvert scikit-learn pandas numpy matplotlib
+
+      - name: Run Notebook and extract score
+        id: compute
+        run: |
+          cd pr-branch
+          # We execute the notebook and save to a temporary output ipynb
+          jupyter nbconvert --to notebook --execute "Admission prediction.ipynb" --output "Executed_Admission_prediction.ipynb"
+          
+          # Extract the R2 score
+          # The regex needs to handle cases where there are multiple matches (code block vs output)
+          SCORE=$(grep -o 'LEADERBOARD_R2_SCORE:[0-9]\{1,\}\.[0-9]\{1,\}' "Executed_Admission_prediction.ipynb" | head -n 1 | cut -d ':' -f 2)
+          echo "Extracted score: $SCORE"
+          
+          if [ -z "$SCORE" ]; then
+            echo "Failed to extract R2 score from notebook."
+            exit 1
+          fi
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Checkout root repo to update leaderboard
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: 'main-branch'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Leaderboard JSON
+        run: |
+          cd main-branch
+          python -c '
+          import json
+          import sys
+          from datetime import datetime
+          import os
+
+          score_str = sys.argv[1]
+          username = sys.argv[2]
+          pr_number = sys.argv[3]
+          pr_url = sys.argv[4]
+          
+          try:
+              score = float(score_str)
+          except ValueError:
+              print("Invalid score:", score_str)
+              sys.exit(1)
+
+          leaderboard_path = "leaderboard.json"
+          if os.path.exists(leaderboard_path):
+              with open(leaderboard_path, "r") as f:
+                  data = json.load(f)
+          else:
+              data = {"entries": [], "last_updated": ""}
+
+          # Upsert logic
+          entries = data.get("entries", [])
+          found = False
+          for entry in entries:
+              if entry.get("username") == username:
+                  entry["r2_score"] = score
+                  entry["pr_number"] = int(pr_number) if pr_number != "null" else None
+                  entry["pr_url"] = pr_url
+                  entry["submitted_at"] = datetime.utcnow().isoformat() + "Z"
+                  entry["is_baseline"] = False
+                  found = True
+                  break
+          
+          if not found:
+              entries.append({
+                  "username": username,
+                  "r2_score": score,
+                  "pr_number": int(pr_number) if pr_number != "null" else None,
+                  "pr_url": pr_url,
+                  "submitted_at": datetime.utcnow().isoformat() + "Z",
+                  "is_baseline": False
+              })
+              
+          # Sort descending by score
+          entries.sort(key=lambda x: x["r2_score"], reverse=True)
+          
+          # Update rank
+          for idx, entry in enumerate(entries):
+              entry["rank"] = idx + 1
+              
+          data["entries"] = entries
+          data["last_updated"] = datetime.utcnow().isoformat() + "Z"
+          
+          with open(leaderboard_path, "w") as f:
+              json.dump(data, f, indent=2)
+          ' "${{ steps.compute.outputs.score }}" "${{ github.event.pull_request.user.login }}" "${{ github.event.pull_request.number }}" "${{ github.event.pull_request.html_url }}"
+
+      - name: Commit and Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd main-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git add "leaderboard.json"
+          git commit -m "Update leaderboard for PR #${{ github.event.pull_request.number }}" || echo "No changes to commit"
+          git push

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Leaderboard | College Admission Prediction</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen p-4 sm:p-8">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 pb-4 border-b border-gray-200">
+            <h1 class="text-2xl font-semibold text-gray-900">
+                College Admission Prediction
+            </h1>
+            <p class="text-gray-500 mt-1 text-sm">Model performance leaderboard based on test set R² Score.</p>
+        </header>
+
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200 text-gray-600">
+                            <th class="py-3 px-4 font-semibold w-16 text-center">Rank</th>
+                            <th class="py-3 px-4 font-semibold">Contributor</th>
+                            <th class="py-3 px-4 font-semibold w-32 border-l border-gray-100 text-right">R² Score</th>
+                            <th class="py-3 px-4 font-semibold w-32 text-center">Source PR</th>
+                            <th class="py-3 px-4 font-semibold w-32 text-right">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body" class="divide-y divide-gray-100">
+                        <!-- Data gets injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="mt-8 flex justify-between items-center text-xs text-gray-500">
+            <div id="last-updated">Updating...</div>
+            <a href="https://github.com/SubhajitDolai/admission-prediction" class="hover:text-gray-800 hover:underline">
+                View Repository &rarr;
+            </a>
+        </div>
+    </div>
+
+    <script>
+        async function fetchLeaderboard() {
+            try {
+                let data;
+                let fetchError;
+                
+                // 1. Try to fetch locally (works when running a local python HTTP server)
+                try {
+                    const resLocal = await fetch('../leaderboard.json');
+                    if (!resLocal.ok) throw new Error("Local fallback failed");
+                    data = await resLocal.json();
+                } catch (e) {
+                    fetchError = e;
+                    console.log("Local fetch failed, falling back to GitHub raw URL...");
+                    // 2. Fallback to Github Raw (Works on GitHub Pages)
+                    const resRemote = await fetch('https://raw.githubusercontent.com/SubhajitDolai/admission-prediction/main/leaderboard.json');
+                    if (!resRemote.ok) throw new Error("Remote fetch failed");
+                    data = await resRemote.json();
+                }
+                
+                const tbody = document.getElementById('leaderboard-body');
+                tbody.innerHTML = '';
+
+                data.entries.forEach((entry, index) => {
+                    const isTop = index === 0;
+                    const rowClass = isTop ? "bg-green-50/30" : "hover:bg-gray-50 transition-colors";
+                    
+                    const badge = entry.is_baseline 
+                        ? `<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">Baseline</span>`
+                        : '';
+                        
+                    const prLink = entry.pr_url 
+                        ? `<a href="${entry.pr_url}" target="_blank" class="text-blue-600 hover:text-blue-800 hover:underline">#${entry.pr_number}</a>`
+                        : `<span class="text-gray-400">—</span>`;
+                        
+                    const dateStr = new Date(entry.submitted_at).toLocaleDateString("en-US", {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                    });
+
+                    // Format rank
+                    let rankDisplay = `<span class="text-gray-500 font-medium">${entry.rank}</span>`;
+                    if (entry.rank === 1) rankDisplay = '🏆';
+                    if (entry.rank === 2) rankDisplay = '<span class="text-gray-400 text-lg">🥈</span>';
+                    if (entry.rank === 3) rankDisplay = '<span class="text-yellow-600 text-lg">🥉</span>';
+
+                    const tr = document.createElement('tr');
+                    tr.className = rowClass;
+                    tr.innerHTML = `
+                        <td class="py-3 px-4 text-center align-middle text-lg">${rankDisplay}</td>
+                        <td class="py-3 px-4 align-middle">
+                            <div class="flex items-center gap-2">
+                                <img src="https://github.com/${entry.username}.png?size=40" alt="" class="w-6 h-6 rounded-full border border-gray-200 shadow-sm">
+                                <span class="font-medium text-gray-900">${entry.username}</span>
+                            </div>
+                            <div class="mt-1">${badge}</div>
+                        </td>
+                        <td class="py-3 px-4 align-middle border-l border-gray-100 text-right font-mono font-medium ${isTop ? 'text-green-700' : 'text-gray-600'}">
+                            ${entry.r2_score.toFixed(6)}
+                        </td>
+                        <td class="py-3 px-4 align-middle text-center font-mono">${prLink}</td>
+                        <td class="py-3 px-4 align-middle text-right text-gray-500">${dateStr}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                const dbDate = new Date(data.last_updated);
+                document.getElementById('last-updated').innerText = `Last updated: ${dbDate.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`;
+            } catch (error) {
+                console.error('Error fetching leaderboard:', error);
+                document.getElementById('leaderboard-body').innerHTML = `
+                    <tr><td colspan="5" class="py-12 px-4 text-center text-gray-500">
+                        <svg class="mx-auto h-8 w-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <p class="font-medium text-gray-900">Failed to fetch data</p>
+                        <p class="text-xs mt-1 max-w-sm mx-auto">This usually means the leaderboard.json hasn't been pushed to the main branch yet, or you are opening the file locally without a web server (CORS error).</p>
+                    </td></tr>
+                `;
+                document.getElementById('last-updated').innerText = 'Data unavailable';
+            }
+        }
+
+        fetchLeaderboard();
+    </script>
+</body>
+</html>
