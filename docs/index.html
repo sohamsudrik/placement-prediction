@@ -39,7 +39,7 @@
         
         <div class="mt-8 flex justify-between items-center text-xs text-gray-500">
             <div id="last-updated">Updating...</div>
-            <a href="https://github.com/SubhajitDolai/admission-prediction" class="hover:text-gray-800 hover:underline">
+            <a href="https://github.com/sanskarladkat/placement-prediction" class="hover:text-gray-800 hover:underline">
                 View Repository &rarr;
             </a>
         </div>
@@ -60,7 +60,7 @@
                     fetchError = e;
                     console.log("Local fetch failed, falling back to GitHub raw URL...");
                     // 2. Fallback to Github Raw (Works on GitHub Pages)
-                    const resRemote = await fetch('https://raw.githubusercontent.com/SubhajitDolai/admission-prediction/main/leaderboard.json');
+                    const resRemote = await fetch('https://raw.githubusercontent.com/sanskarladkat/placement-prediction/main/leaderboard.json');
                     if (!resRemote.ok) throw new Error("Remote fetch failed");
                     data = await resRemote.json();
                 }
